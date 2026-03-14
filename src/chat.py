@@ -1,24 +1,13 @@
 import os
 from dotenv import load_dotenv
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_postgres import PGVector
+
+from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
+from search import search
 
 load_dotenv()
-for key in ("OPENAI_API_KEY", "PGVECTOR_URL", "PGVECTOR_COLLECTION"):
-    if not os.getenv(key):
-        raise RuntimeError(f"Environment variable {key} is not set")
 
-embeddings = OpenAIEmbeddings(model=os.getenv("OPENAI_MODEL", "text-embedding-3-small"))
-
-store = PGVector(
-    embeddings=embeddings,
-    collection_name=os.getenv("PGVECTOR_COLLECTION"),
-    connection=os.getenv("PGVECTOR_URL"),
-    use_jsonb=True,
-)
-
-llm = ChatOpenAI(model="gpt-4o-mini")
+llm = ChatOpenAI(model="gpt-5-nano")
 
 prompt_template = PromptTemplate.from_template("""CONTEXTO:
 {context}
@@ -47,19 +36,18 @@ RESPONDA A "PERGUNTA DO USUÁRIO\"""")
 
 
 def ask(question: str) -> str:
-    docs = store.similarity_search(question, k=10)
-    context = "\n\n".join(doc.page_content for doc in docs)
+    results = search(question, k=10)
+    context = "\n\n".join(doc.page_content for doc, _score in results)
     prompt = prompt_template.format(context=context, question=question)
-    response = llm.invoke(prompt)
-    return response.content
+    return llm.invoke(prompt).content
 
 
 if __name__ == "__main__":
     print("Chat iniciado. Digite 'sair' para encerrar.\n")
     while True:
-        question = input("Você: ").strip()
+        question = input("PERGUNTA: ").strip()
         if not question:
             continue
         if question.lower() == "sair":
             break
-        print(f"Assistente: {ask(question)}\n")
+        print(f"RESPOSTA: {ask(question)}\n")

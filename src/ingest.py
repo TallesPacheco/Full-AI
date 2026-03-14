@@ -9,7 +9,7 @@ from langchain_core.documents import Document
 from langchain_postgres import PGVector
 
 load_dotenv()
-for key in ("OPENAI_API_KEY", "PGVECTOR_URL","PGVECTOR_COLLECTION"):
+for key in ("OPENAI_API_KEY", "PGVECTOR_URL", "PGVECTOR_COLLECTION"):
     if not os.getenv(key):
         raise RuntimeError(f"Environment variable {key} is not set")
 
@@ -19,22 +19,25 @@ pdf_path = current_dir.parent / "documento.pdf"
 docs = PyPDFLoader(str(pdf_path)).load()
 
 splits = RecursiveCharacterTextSplitter(
-    chunk_size=1000, 
-    chunk_overlap=150, add_start_index=False).split_documents(docs)
+    chunk_size=1000,
+    chunk_overlap=150,
+    add_start_index=False,
+).split_documents(docs)
+
 if not splits:
     raise SystemExit(0)
 
 enriched = [
     Document(
         page_content=d.page_content,
-        metadata={key: value for key, value in d.metadata.items() if value not in ("", None)}
+        metadata={k: v for k, v in d.metadata.items() if v not in ("", None)},
     )
     for d in splits
-]    
+]
 
-ids = [f"doc-{id}" for id in range(len(enriched))]
+ids = [f"doc-{i}" for i in range(len(enriched))]
 
-embeddings = OpenAIEmbeddings(model=os.getenv("OPENAI_MODEL","text-embedding-3-small"))
+embeddings = OpenAIEmbeddings(model=os.getenv("OPENAI_MODEL", "text-embedding-3-small"))
 
 store = PGVector(
     embeddings=embeddings,
@@ -44,3 +47,4 @@ store = PGVector(
 )
 
 store.add_documents(documents=enriched, ids=ids)
+print(f"Ingestão concluída: {len(enriched)} chunks armazenados.")

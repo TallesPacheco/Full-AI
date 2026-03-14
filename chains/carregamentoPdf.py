@@ -1,7 +1,7 @@
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-loader = PyPDFLoader("./corrida.pdf")
+loader = PyPDFLoader("./documento.pdf")
 docs = loader.load()
 
 splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
