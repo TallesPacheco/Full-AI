@@ -1,0 +1,13 @@
+# Ambiente Virtual
+venv/
+ENV/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Sistema (especialmente se estiver no Mac)
+.DS_Store
+
+.env
