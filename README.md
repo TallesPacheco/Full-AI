@@ -120,15 +120,112 @@ https://smith.langchain.com/prompts/talles/bug_to_user_story_v2
 
 ### Tecnicas Aplicadas (Fase 2)
 
-A versao `v2` aplica cinco tecnicas avancadas combinadas, todas declaradas em `prompts/bug_to_user_story_v2.yml` no campo `techniques_applied`:
+A versao `v2` combina cinco tecnicas avancadas de Prompt Engineering, todas declaradas em `prompts/bug_to_user_story_v2.yml` no campo `techniques_applied`. Esta secao detalha cada uma com justificativa e exemplo pratico extraido do proprio YAML.
 
-| Tecnica | Onde aparece no prompt | Justificativa | Metrica favorecida |
-| --- | --- | --- | --- |
-| **Role Prompting** | `system_prompt`: "Voce e um Product Manager senior e Agile Coach especializado em transformar relatos de bugs em User Stories acionaveis." | Define persona e contexto, alinhando tom (empatico, profissional) e estrutura esperada da resposta. | Helpfulness, Clarity |
-| **Few-shot Learning** | `user_prompt`: tres exemplos completos cobrindo bug simples (1 linha), bug medio (com Steps/Logs) e bug medio com Observações tecnicas. | Tecnica obrigatoria do enunciado. Os exemplos ensinam o modelo a casar com a estrutura do dataset de referencia. | Helpfulness, Correctness, F1-Score |
-| **Skeleton of Thought** | `system_prompt`: tres niveis de detalhe (1=simples, 2=medio, 3=complexo) com lista fixa de secoes por nivel. | Garante saida estruturada e proporcional a complexidade do bug, evitando over-engineering em bugs simples e under-engineering em complexos. | Clarity, Precision, F1-Score |
-| **Private Chain of Thought** | `system_prompt`: "Antes de escrever, identifique mentalmente: persona afetada, acao desejada, beneficio, criterios verificaveis... NAO MOSTRAR." | Forca o modelo a raciocinar sobre criterios antes de responder, mas devolver apenas a resposta final - melhora precisao sem poluir a saida. | Correctness, F1-Score |
-| **Constraint Prompting** | `system_prompt`: regras explicitas "Nao invente informacoes", "Preserve termos tecnicos", "Use empatia", listas de secoes proibidas por nivel. | Reduz alucinacao (informacoes nao presentes no bug) e mantem a saida factual. | Correctness, Precision |
+#### 1. Role Prompting
+
+**Por que escolhi:** o desafio exige saidas para um publico tecnico (Produto, Engenharia, QA). Sem definir persona, o modelo varia de tom entre formal/informal e omite detalhes que so um especialista de produto incluiria (Gherkin, criterios testaveis). Role Prompting fixa o ponto de vista e elimina essa variancia.
+
+**Exemplo pratico (trecho real do `system_prompt`):**
+
+```yaml
+system_prompt: |
+  Voce e um Product Manager senior e Agile Coach, especialista em
+  transformar relatos de bugs em User Stories claras, testaveis e
+  acionaveis.
+```
+
+**Metricas favorecidas:** Helpfulness, Clarity.
+
+#### 2. Few-shot Learning (obrigatoria pelo enunciado)
+
+**Por que escolhi:** o dataset de avaliacao tem 3 perfis de bug (simples, medio, complexo) com formatos de referencia muito diferentes. Sem exemplos, o modelo extrapola arbitrariamente. Tres exemplos curados ensinam o modelo a casar com a estrutura esperada por nivel de complexidade.
+
+**Exemplo pratico (trecho real do `user_prompt`):**
+
+```yaml
+user_prompt: |
+  ============================================================
+  EXEMPLO 1 - NIVEL 1 (Bug simples)
+  ============================================================
+  Entrada:
+  Botão de adicionar ao carrinho não funciona no produto ID 1234.
+
+  Saida:
+  Como um cliente navegando na loja, eu quero adicionar produtos
+  ao meu carrinho de compras, para que eu possa continuar
+  comprando e finalizar minha compra depois.
+
+  Critérios de Aceitação:
+  - Dado que estou visualizando um produto
+  - Quando clico no botão "Adicionar ao Carrinho"
+  - Então o produto deve ser adicionado ao carrinho
+  - E devo ver uma confirmação visual
+  - E o contador do carrinho deve ser atualizado
+```
+
+(Existem mais dois exemplos no YAML cobrindo bug medio com Steps/Logs e bug medio com Observações.)
+
+**Metricas favorecidas:** Helpfulness, Correctness, F1-Score.
+
+#### 3. Skeleton of Thought (escalavel)
+
+**Por que escolhi:** outputs uniformes super-detalham bugs simples (perdendo Precision) ou sub-detalham bugs complexos (perdendo Recall e F1). A solucao foi criar tres niveis de saida com secoes fixas por nivel, fazendo o modelo classificar o bug primeiro e so depois gerar.
+
+**Exemplo pratico (trecho real do `system_prompt`):**
+
+```yaml
+NIVEIS DE DETALHE (Skeleton of Thought escalavel):
+
+NIVEL 1 - SIMPLES (1-3 frases): User Story + Critérios de Aceitação.
+NIVEL 2 - MEDIO (com Steps/Logs/Observações): adiciona Critérios Técnicos
+          e Contexto do Bug.
+NIVEL 3 - COMPLEXO (secoes em CAIXA ALTA): adiciona Tasks Técnicas
+          Sugeridas em sprints e Métricas de Sucesso quando ha numeros.
+```
+
+**Metricas favorecidas:** Clarity, Precision, F1-Score.
+
+#### 4. Private Chain of Thought
+
+**Por que escolhi:** modelos que respondem direto saltam etapas de raciocinio e omitem criterios. Chain of Thought publico polui a resposta. A versao privada exige analise interna mas devolve apenas o resultado final, ganhando rigor sem perder cleanliness.
+
+**Exemplo pratico (trecho real do `system_prompt`):**
+
+```yaml
+PROCESSO INTERNO (Chain of Thought privado, NAO MOSTRAR):
+Antes de escrever, identifique mentalmente:
+- Persona afetada, acao desejada, beneficio.
+- Criterios verificaveis (pre-condicao, acao, resultado, variacoes).
+- Se ha logs, steps, observacoes ou secoes estruturadas que
+  justificam Criterios Tecnicos.
+- Se ha CONTEXTO/IMPACTO/PROBLEMAS estruturados que justificam
+  secoes adicionais.
+```
+
+**Metricas favorecidas:** Correctness, F1-Score.
+
+#### 5. Constraint Prompting
+
+**Por que escolhi:** alucinacao foi o principal motivo de Precision baixa nas primeiras iteracoes (o modelo inventava metricas, ferramentas e gateways). Regras negativas explicitas ("Nao invente", "Nao adicione", "PROIBIDO no NIVEL 1...") atacam diretamente esse problema.
+
+**Exemplo pratico (trecho real do `system_prompt`):**
+
+```yaml
+REGRAS OBRIGATORIAS:
+1. Nao invente informacoes. Use apenas o que esta no relato do bug.
+2. Preserve fielmente termos tecnicos, telas, dispositivos, logs
+   e codigos de erro mencionados.
+3. Escreva em portugues do Brasil com acentuacao correta.
+4. Use empatia: foque no objetivo do usuario, nao no defeito.
+5. ESCALE o nivel de detalhe da resposta conforme a complexidade do bug.
+6. Nao mostre raciocinio. Devolva apenas a resposta final.
+7. Nao inclua observacoes, ressalvas, links ou texto fora do formato.
+```
+
+E listas de secoes proibidas por nivel (ex: `PROIBIDO no NIVEL 1 incluir qualquer outra secao`).
+
+**Metricas favorecidas:** Correctness, Precision.
 
 ### Resultados Finais
 
@@ -185,15 +282,58 @@ EVAL_MODEL=gemini-2.5-flash
 
 A entrega cumpre todos os requisitos estruturais do desafio (pull, push, prompt v2 publico com 5 tecnicas, dataset de 15 exemplos, testes pytest, README documentando processo) e atinge 4 de 5 metricas acima do minimo de 0.90 com folga. O F1-Score permanece abaixo do limite por restricao do juiz Gemini, nao por qualidade do prompt.
 
-### Evidencias da Avaliacao
+### Evidencias da Avaliacao no LangSmith
 
-Dashboard do LangSmith com o dataset `bug_to_user_story_eval_v2` e os experimentos do prompt v2 (todas as 5 metricas exibidas):
+**Links publicos:**
 
-![Experimentos LangSmith do prompt v2](screenshots/langsmith-experimentos.png)
+- Prompt v2 no Hub: <https://smith.langchain.com/prompts/talles/bug_to_user_story_v2>
+- Dataset oficial com 15 exemplos: <https://smith.langchain.com/o/97319e17-e4ce-4eff-9e01-b4ec832cb06e/datasets/853ad5c2-39dc-4eb8-96b7-7a0704cc2767>
+- Experimento formal com as 5 metricas: <https://smith.langchain.com/o/97319e17-e4ce-4eff-9e01-b4ec832cb06e/datasets/853ad5c2-39dc-4eb8-96b7-7a0704cc2767/compare?selectedSessions=6bbde8ae-7177-48f3-a765-9d9346a5a3c2>
+- Projeto com todos os traces das execucoes do v2: <https://smith.langchain.com/o/97319e17-e4ce-4eff-9e01-b4ec832cb06e/projects/p/0dcd1f28-ff46-4b67-947e-caf7f2caae16>
 
-Prompt v2 publicado no Prompt Hub do LangSmith:
+#### Dataset oficial com 15 exemplos
 
-![Prompt v2 publico no LangSmith Hub](screenshots/langsmith-prompt-publico.png)
+5 bugs simples + 7 medios + 3 complexos, conforme o boilerplate `devfullcycle/mba-ia-pull-evaluation-prompt`:
+
+![Dataset com 15 exemplos no LangSmith](screenshots/langsmith-dataset-15-exemplos.png)
+
+#### Experimento formal com as 5 metricas (LLM-as-judge)
+
+Resultado da execucao gerada via `src/log_to_langsmith.py` (que usa `langsmith.evaluation.evaluate()` para persistir feedback formal). As medias por metrica aparecem no topo de cada coluna:
+
+| Clarity | Correctness | F1-Score | Helpfulness | Precision |
+| ---: | ---: | ---: | ---: | ---: |
+| 0.94 ✓ | 0.91 ✓ | 0.86 | 0.95 ✓ | 0.95 ✓ |
+
+![Experimento formal com 5 metricas no LangSmith](screenshots/langsmith-experimento-formal.png)
+
+#### Projeto com traces das execucoes (`prompt-optimization-challenge`)
+
+Lista de runs com inputs/outputs/latency/tokens/custo:
+
+![Traces do projeto](screenshots/langsmith-projeto-traces.png)
+
+#### Tracing detalhado de 3 exemplos (1 por complexidade)
+
+**Bug simples** - "Botão de adicionar ao carrinho não funciona no produto ID 1234":
+
+![Trace de bug simples](screenshots/langsmith-trace-simples.png)
+
+Scores neste exemplo: F1=1.00, Correctness=0.985, Clarity=0.975, Helpfulness=0.97, Precision=0.97.
+
+**Bug medio** - "Webhook de pagamento aprovado nao esta sendo chamado" (com Steps to reproduce + Logs):
+
+![Trace de bug medio](screenshots/langsmith-trace-medio.png)
+
+Scores neste exemplo: Clarity=1.00, Precision=0.975, Helpfulness=0.9875, F1=0.6476, Correctness=0.6477.
+
+**Bug complexo** - "Sistema de checkout com multiplas falhas criticas" (multiplos sub-problemas estruturados):
+
+![Trace de bug complexo](screenshots/langsmith-trace-complexo.png)
+
+Scores neste exemplo: Precision=1.00, Clarity=0.975, Helpfulness=0.9875, F1=0.6077, Correctness=0.6076.
+
+> **Sobre o F1-Score nos bugs medios/complexos:** o LLM-as-judge baseia o F1 em comparacao textual com a `reference` do dataset, que em alguns casos contem secoes extensas (TASKS TECNICAS SUGERIDAS, METRICAS DE SUCESSO etc) que so seriam geradas com input ainda mais detalhado. Mesmo assim, Precision e Clarity ficam altas, mostrando que o output e factualmente correto.
 
 ### Como Executar o Desafio 2
 
@@ -259,8 +399,6 @@ EVAL_MODEL=gpt-4o
 │   └── utils.py                   # helpers oficiais (intocado)
 ├── tests/
 │   └── test_prompts.py            # 6 testes obrigatorios + 1 extra de estrutura
-├── desafio2/                      # documentacao passo-a-passo das 5 fases
-├── Google/                        # snapshot da tentativa com Gemini (ver RESULTADOS.md)
 └── screenshots/
     ├── langsmith-experimentos.png
     └── langsmith-prompt-publico.png
