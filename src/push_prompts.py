@@ -84,7 +84,13 @@ def push_prompt_to_langsmith(prompt_name: str, prompt_data: dict) -> bool:
     print(f"Tags: {tags}")
 
     try:
-        url = hub.push(identifier, chat_prompt, new_repo_is_public=True)
+        url = hub.push(
+            identifier,
+            chat_prompt,
+            new_repo_is_public=True,
+            new_repo_description=description,
+            tags=tags,
+        )
         print(f"\nPrompt publicado com sucesso: {url}")
         return True
     except Exception as exc:
